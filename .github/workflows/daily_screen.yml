@@ -1,11 +1,8 @@
 name: Daily Trading Screen
 
 on:
-  # Post-market: Mon–Fri at 21:30 UTC = 4:30pm ET (30 min after close)
   schedule:
     - cron: '30 21 * * 1-5'
-
-  # Manual trigger with options
   workflow_dispatch:
     inputs:
       mode:
@@ -14,9 +11,9 @@ on:
         default: 'full'
         type: choice
         options:
-          - full          # Screen + market review
-          - screen-only   # Watchlist screen only
-          - market-only   # Market regime review only
+          - full
+          - screen-only
+          - market-only
       force_run:
         description: 'Force run (skip trading day check)'
         required: false
@@ -30,8 +27,7 @@ concurrency:
 jobs:
   screen:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-
+    timeout-minutes: 60
     steps:
       - name: Checkout repo
         uses: actions/checkout@v5
@@ -52,62 +48,41 @@ jobs:
 
       - name: Run daily screen
         env:
-          # ── LLM ──────────────────────────────────────────────
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash' }}
-          GEMINI_MODEL_FALLBACK: 'gemini-2.0-flash'
-
-          # ── Watchlist ─────────────────────────────────────────
-          # Comma-separated US tickers. Update via repo Variables → STOCK_LIST
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.0-flash' }}
+          GEMINI_MODEL_FALLBACK: 'gemini-2.0-flash-lite'
           STOCK_LIST: ${{ vars.STOCK_LIST || 'VICR,AOSL,AMD,INTC,ARM,AXTI,POWI,CRDO,AEHR,MU,STX,WDC,SNDK,MRAM,MRVL,MXL,LWLG,VIAV,CIEN,AAOI,IREN,DGXX,SLNH,LGN,DELL,CIFR,CRWV,NBIS,WULF,HUT,BE,POWL,LAC,LAR,ALM,NEXA,UAMY,CRML,USAR,RVMD,ALMU,MWH,FCEL,NOK,BB,SATL,BAND,TWLO,BORR,SVM,HYMC' }}
           MARKET_REVIEW_REGION: 'us'
-
-          # ── Report settings ────────────────────────────────────
           REPORT_TYPE: ${{ vars.REPORT_TYPE || 'full' }}
           REPORT_LANGUAGE: 'en'
           SINGLE_STOCK_NOTIFY: 'false'
           MARKET_REVIEW_ENABLED: 'true'
           TRADING_DAY_CHECK_ENABLED: 'true'
-
-          # ── Notion output ──────────────────────────────────────
           NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_SCREEN_DB_ID }}
-
-          # ── Data sources (yfinance as primary for US stocks) ───
           REALTIME_SOURCE_PRIORITY: 'akshare_sina,efinance,akshare_em'
-
-          # ── Search (for news enrichment) ───────────────────────
           TAVILY_API_KEYS: ${{ secrets.TAVILY_API_KEYS }}
-
-          # ── Rate limiting (Gemini free tier: 15 req/min on Flash) ──
-          GEMINI_REQUEST_DELAY: '5'     # 5s between LLM calls = 12 req/min, safe under 15
-          MAX_WORKERS: '1'              # Serial processing — no parallel rate limit collisions
-          ANALYSIS_DELAY: '3'          # 3s gap between stock analysis and market review
-
-          # ── Strategy ──────────────────────────────────────────
+          GEMINI_REQUEST_DELAY: '5'
+          GEMINI_MAX_RETRIES: '1'
+          REPORT_INTEGRITY_RETRY: '0'
+          REPORT_INTEGRITY_ENABLED: 'false'
+          MAX_WORKERS: '1'
+          ANALYSIS_DELAY: '3'
           AGENT_SKILLS: 'momentum_breakout'
           AGENT_SKILL_DIR: 'strategies'
-
-          # ── System ────────────────────────────────────────────
           LOG_LEVEL: INFO
           ENABLE_CHIP_DISTRIBUTION: 'false'
-
         run: |
           FORCE_ARG=""
           if [ "${{ github.event.inputs.force_run }}" = "true" ]; then
             FORCE_ARG="--force-run"
-            echo "⚡ Force run enabled"
           fi
-
           MODE="${{ github.event.inputs.mode || 'full' }}"
-          echo "════════════════════════════════════════"
-          echo "🔍 Pucci Daily Trading Screen"
-          echo "⏰ Run time (UTC): $(date '+%Y-%m-%d %H:%M:%S')"
-          echo "⏰ Market time (ET): $(TZ='America/New_York' date '+%Y-%m-%d %H:%M:%S')"
-          echo "📊 Tickers: $(echo $STOCK_LIST | tr ',' '\n' | wc -l) stocks"
-          echo "🎯 Mode: $MODE"
-          echo "════════════════════════════════════════"
-
+          echo "Pucci Daily Trading Screen"
+          echo "Time UTC: $(date '+%Y-%m-%d %H:%M:%S')"
+          echo "Time ET: $(TZ='America/New_York' date '+%Y-%m-%d %H:%M:%S')"
+          echo "Tickers: $(echo $STOCK_LIST | tr ',' '\n' | wc -l)"
+          echo "Mode: $MODE | Model: $GEMINI_MODEL"
           if [ "$MODE" = "market-only" ]; then
             python main.py --market-review $FORCE_ARG
           elif [ "$MODE" = "screen-only" ]; then
@@ -126,11 +101,11 @@ jobs:
           if [ -f "scripts/notion_push.py" ]; then
             python scripts/notion_push.py
           else
-            echo "ℹ️  Notion push script not found, skipping"
+            echo "Notion push script not found, skipping"
           fi
 
       - name: Upload reports
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: screen-reports-${{ github.run_number }}
@@ -142,13 +117,5 @@ jobs:
       - name: Summary
         if: always()
         run: |
-          echo "════════════════════════════════════════"
-          echo "📊 Screen complete"
-          echo "════════════════════════════════════════"
-          if [ -d "reports" ] && [ "$(ls -A reports 2>/dev/null)" ]; then
-            echo "Reports generated:"
-            ls -lh reports/
-          else
-            echo "⚠️  No reports found"
-          fi
-          [ -f logs/*.log ] && tail -20 logs/*.log 2>/dev/null || true
+          echo "Screen complete"
+          ls -lh reports/ 2>/dev/null || echo "No reports"
