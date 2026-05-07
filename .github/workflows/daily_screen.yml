@@ -1,0 +1,146 @@
+name: Daily Trading Screen
+
+on:
+  # Post-market: Mon–Fri at 21:30 UTC = 4:30pm ET (30 min after close)
+  schedule:
+    - cron: '30 21 * * 1-5'
+
+  # Manual trigger with options
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Run mode'
+        required: true
+        default: 'full'
+        type: choice
+        options:
+          - full          # Screen + market review
+          - screen-only   # Watchlist screen only
+          - market-only   # Market regime review only
+      force_run:
+        description: 'Force run (skip trading day check)'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: daily-screen
+  cancel-in-progress: false
+
+jobs:
+  screen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Create working directories
+        run: mkdir -p data logs reports
+
+      - name: Run daily screen
+        env:
+          # ── LLM ──────────────────────────────────────────────
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash' }}
+          GEMINI_MODEL_FALLBACK: 'gemini-2.0-flash'
+
+          # ── Watchlist ─────────────────────────────────────────
+          # Space-separated US tickers. Update via repo Variables → STOCK_LIST
+          STOCK_LIST: ${{ vars.STOCK_LIST || 'VICR AOSL AMD INTC ARM AXTI POWI CRDO AEHR MU STX WDC SNDK MRAM MRVL MXL LWLG VIAV CIEN AAOI IREN DGXX SLNH LGN DELL CIFR CRWV NBIS WULF HUT BE POWL LAC LAR ALM NEXA UAMY CRML USAR RVMD ALMU MWH FCEL NOK BB SATL BAND TWLO BORR SVM HYMC' }}
+          MARKET_REVIEW_REGION: 'us'
+
+          # ── Report settings ────────────────────────────────────
+          REPORT_TYPE: ${{ vars.REPORT_TYPE || 'full' }}
+          REPORT_LANGUAGE: 'en'
+          SINGLE_STOCK_NOTIFY: 'false'
+          MARKET_REVIEW_ENABLED: 'true'
+          TRADING_DAY_CHECK_ENABLED: 'true'
+
+          # ── Notion output ──────────────────────────────────────
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_SCREEN_DB_ID }}
+
+          # ── Data sources (yfinance as primary for US stocks) ───
+          REALTIME_SOURCE_PRIORITY: 'akshare_sina,efinance,akshare_em'
+
+          # ── Search (for news enrichment) ───────────────────────
+          TAVILY_API_KEYS: ${{ secrets.TAVILY_API_KEYS }}
+
+          # ── System ────────────────────────────────────────────
+          LOG_LEVEL: INFO
+          MAX_WORKERS: '3'
+          ENABLE_CHIP_DISTRIBUTION: 'false'
+
+        run: |
+          FORCE_ARG=""
+          if [ "${{ github.event.inputs.force_run }}" = "true" ]; then
+            FORCE_ARG="--force-run"
+            echo "⚡ Force run enabled"
+          fi
+
+          MODE="${{ github.event.inputs.mode || 'full' }}"
+          echo "════════════════════════════════════════"
+          echo "🔍 Pucci Daily Trading Screen"
+          echo "⏰ Run time (UTC): $(date '+%Y-%m-%d %H:%M:%S')"
+          echo "⏰ Market time (ET): $(TZ='America/New_York' date '+%Y-%m-%d %H:%M:%S')"
+          echo "📊 Tickers: $(echo $STOCK_LIST | tr ' ' '\n' | wc -l) stocks"
+          echo "🎯 Mode: $MODE"
+          echo "════════════════════════════════════════"
+
+          if [ "$MODE" = "market-only" ]; then
+            python main.py --market-review $FORCE_ARG
+          elif [ "$MODE" = "screen-only" ]; then
+            python main.py --no-market-review $FORCE_ARG
+          else
+            python main.py $FORCE_ARG
+          fi
+
+      - name: Post results to Notion
+        if: success()
+        env:
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          NOTION_SCREEN_DB_ID: ${{ secrets.NOTION_SCREEN_DB_ID }}
+          NOTION_PARENT_DB_ID: ${{ secrets.NOTION_MARKET_BRIEF_DB_ID }}
+        run: |
+          if [ -f "scripts/notion_push.py" ]; then
+            python scripts/notion_push.py
+          else
+            echo "ℹ️  Notion push script not found, skipping"
+          fi
+
+      - name: Upload reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screen-reports-${{ github.run_number }}
+          path: |
+            reports/
+            logs/
+          retention-days: 14
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "════════════════════════════════════════"
+          echo "📊 Screen complete"
+          echo "════════════════════════════════════════"
+          if [ -d "reports" ] && [ "$(ls -A reports 2>/dev/null)" ]; then
+            echo "Reports generated:"
+            ls -lh reports/
+          else
+            echo "⚠️  No reports found"
+          fi
+          [ -f logs/*.log ] && tail -20 logs/*.log 2>/dev/null || true
