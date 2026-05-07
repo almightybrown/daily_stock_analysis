@@ -53,10 +53,12 @@ jobs:
       - name: Deploy custom strategy
         run: |
           mkdir -p strategies
-          cat > strategies/momentum_breakout.yaml << 'YAML'
+          python3 - <<'EOF'
+import textwrap, pathlib
+content = textwrap.dedent("""
 name: momentum_breakout
 display_name: Momentum Breakout (US)
-description: US momentum breakout scanner following Kullamägi/Minervini/META methodology.
+description: US momentum breakout scanner following Kullamagi/Minervini/META methodology.
 category: trend
 core_rules: [1, 2, 3, 4, 5]
 required_tools:
@@ -68,12 +70,12 @@ default_priority: 10
 market_regimes: [trending_up]
 
 instructions: |
-  **Momentum Breakout Strategy (Kullamägi / Minervini / META)**
+  Momentum Breakout Strategy (Kullamagi / Minervini / META)
 
   US equity momentum strategy. All prices in USD.
   Only flag BUY when general market is in confirmed uptrend (QQQ 10-day MA > 20-day MA, price > 50-day MA).
 
-  ## Setup Type A: Tight Base Breakout (Primary)
+  Setup Type A - Tight Base Breakout (Primary):
   - Prior move: 30-100%+ within last 1-3 months required.
   - Base: 2-8 weeks consolidation, volume CONTRACTING, range TIGHTENING.
   - MAs: 10-day and 20-day both rising ~45 degrees. MA10 > MA20 > MA50 ideal.
@@ -81,40 +83,40 @@ instructions: |
   - Entry: at or within 1-2% of breakout pivot. Never chase >3% extended.
   - Stop: LOW OF THE BREAKOUT DAY. Never MA20.
 
-  ## Setup Type B: Pullback to Rising MA (Secondary)
+  Setup Type B - Pullback to Rising MA (Secondary):
   - Stock already in Stage 2 uptrend (higher highs/lows series).
   - 10-day and 20-day MAs rising and spread apart.
   - Price pulls back to 10-day or 20-day MA on LOW volume (no distribution).
-  - Entry: first day price holds/bounces at MA.
-  - Stop: below low of the pullback day.
+  - Entry: first day price holds/bounces at MA. Stop: below low of pullback day.
 
-  ## HARD RISK RULES (always include in every output)
+  HARD RISK RULES (include in every output):
   - Account risk per trade: 0.5% maximum.
-  - Stop: low of breakout/pullback day only. Never widen.
-  - Never average down.
-  - EARNINGS CHECK REQUIRED: if earnings within 3 trading days → automatic WATCH, do not buy.
+  - Stop: low of breakout/pullback day only. Never widen. Never average down.
+  - EARNINGS CHECK: if earnings within 3 trading days -> automatic WATCH, do not buy.
   - Never enter more than 2-3% past ideal buy point.
 
-  ## Position Sizing (always calculate — never use generic %)
-  Formula: (Account × 0.005) ÷ (Entry Price − Stop Price) = shares
-  Show your work: "Entry $X, Stop $Y → risk $Z/share → at 0.5% account risk = N shares"
+  Position Sizing (always calculate, never use generic %):
+  Formula: (Account x 0.005) / (Entry Price - Stop Price) = shares
+  Show work: Entry $X, Stop $Y -> risk $Z/share -> at 0.5% account risk = N shares
 
-  ## Scoring
+  Scoring:
   - Tight base (<8% range) + volume contraction: +15
   - Prior move >50% in 3 months: +10
   - MA10 > MA20 > MA50 all rising: +10
   - Breakout on 2x+ volume: +10
-  - Earnings within 3 days: -20, flag as WATCH/NO-TRADE
+  - Earnings within 3 days: -20, flag WATCH/NO-TRADE
   - Extended >10% past 20-day MA: -15
   - Volume expanding during base: -15
 
-  ## Disqualifiers → auto WATCH
+  Disqualifiers (auto WATCH):
   - Earnings within 3 trading days
   - Extended >15% above 20-day MA
   - Volume expanding during base (distribution)
   - QQQ in downtrend (10-day below 20-day)
-YAML
-          echo "✅ Custom strategy deployed"
+""").lstrip()
+pathlib.Path("strategies/momentum_breakout.yaml").write_text(content)
+print("Custom strategy deployed")
+EOF
 
       - name: Run daily screen
         env:
