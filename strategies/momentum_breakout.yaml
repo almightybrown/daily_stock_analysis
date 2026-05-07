@@ -1,0 +1,107 @@
+# Momentum Breakout Strategy — Kullamägi / Minervini / META Style
+# Tight base breakout (2–8 week consolidation) + pullback to rising 10/20-day MA.
+# Strict US momentum rules. Risk: 0.5% account per trade, stop = low of breakout day.
+
+name: momentum_breakout
+display_name: Momentum Breakout (US)
+description: |
+  US momentum breakout scanner following Kullamägi/Minervini/META methodology.
+  Identifies tight base breakouts and pullbacks to rising 10/20-day MA.
+  Strict risk rules: stop at breakout day low, 0.5% account risk max.
+category: trend
+core_rules: [1, 2, 3, 4, 5]
+required_tools:
+  - get_daily_history
+  - analyze_trend
+  - get_realtime_quote
+aliases: [momentum_breakout, base_breakout, vcp, tight_base]
+default_priority: 10
+market_regimes: [trending_up]
+
+instructions: |
+  **Momentum Breakout Strategy (Kullamägi / Minervini / META)**
+
+  This is a US equity momentum strategy. All analysis must use USD pricing.
+  Only generate BUY signals when general market is in confirmed uptrend
+  (QQQ/IXIC: 10-day MA above 20-day MA, price above 50-day MA).
+
+  ## Setup Type A: Tight Base Breakout
+  Primary setup. 2–8 week consolidation after a prior 30–100%+ move.
+
+  1. **Prior Move Requirement**:
+     - Stock must have had a 30–100%+ move within the last 1–3 months.
+     - This establishes institutional interest and momentum.
+
+  2. **Base Structure**:
+     - 2–8 weeks of orderly consolidation.
+     - Volume must CONTRACT during the base (drying up = supply exhaustion).
+     - Price range must TIGHTEN week over week (higher lows preferred).
+     - No more than 10–15% drawdown inside the base (tight = strong holders).
+
+  3. **MA Requirements**:
+     - 10-day and 20-day MAs must be RISING at approximately 45 degrees.
+     - Price must be above both the 10-day and 20-day MA.
+     - 50-day MA should be rising or at minimum flat.
+     - MA alignment: MA10 > MA20 > MA50 = ideal.
+
+  4. **Breakout Confirmation**:
+     - Price breaks above the highest point of the base on VOLUME expansion.
+     - Volume on breakout day should be at least 1.5x average (2x+ = ideal).
+     - Breakout must be from a TIGHT area — not extended, not parabolic.
+     - Ideal buy point: AS CLOSE TO BREAKOUT PIVOT as possible, max 1–2% above.
+
+  5. **Stop Loss**:
+     - ALWAYS place stop at the LOW of the breakout day.
+     - NEVER widen the stop after entry. If stopped out, accept the loss.
+     - Do not use MA20 as stop for breakout trades — too wide.
+
+  ## Setup Type B: Pullback to Rising 10/20-day MA
+  Secondary setup. Stock that has already broken out, now pulling back.
+
+  1. **Requirements**:
+     - Stock already in Stage 2 uptrend (clear series of higher highs/lows).
+     - 10-day and 20-day MAs rising and spread apart (momentum intact).
+     - Price pulls back to touch or come within 1% of the 10-day or 20-day MA.
+     - Pullback must be on LOW volume (no distribution).
+     - Price must NOT slice through MA — it should bounce or respect the level.
+
+  2. **Entry and Stop**:
+     - Buy point: first day price holds or bounces at the MA level.
+     - Stop: below the low of the pullback day (or 1–2% below the MA touched).
+     - Risk should be tight — if the pullback is deep, pass.
+
+  ## Risk Rules (NON-NEGOTIABLE — always include in output)
+  - Max account risk per trade: 0.5% of total account.
+  - Stop placement: low of the breakout or pullback day.
+  - NEVER average down on a losing position.
+  - NEVER enter within 3 days of an earnings announcement.
+  - NEVER chase a stock more than 2–3% past the ideal buy point.
+
+  ## Position Sizing (always calculate and include)
+  - Position size formula: (Account × 0.005) ÷ (Entry Price − Stop Price) = shares
+  - Express as: "Risk $X per trade. If entry at $Y, stop at $Z → (Y-Z) = $risk per share → shares = X/(Y-Z)"
+  - Do NOT use generic percentages like "30-50%". Calculate from the actual stop distance.
+
+  ## Scoring Adjustments
+  - Tight base (< 8% range) with volume contraction: sentiment_score +15
+  - Prior move > 50% in last 3 months: +10
+  - MA10 > MA20 > MA50 all rising: +10
+  - Breakout on 2x+ volume: +10
+  - Earnings within 3 days: automatic WATCH/NO-TRADE flag, score -20
+  - Extended more than 10% past 20-day MA: score -15 (too late to buy)
+  - Volume expanding on pullback (distribution): score -15
+
+  ## Output Requirements
+  - ideal_buy: exact price level at or just above breakout pivot (USD)
+  - stop_loss: LOW OF THE BREAKOUT/PULLBACK DAY (USD) — never MA20
+  - take_profit: first target = 1× base depth above breakout; second target = next resistance
+  - suggested_position: MUST show the risk calculation (see formula above), not generic %
+  - Always include: "Earnings check: [date if known / clear if unknown]"
+  - If setup is NOT present, clearly state which criteria are missing.
+
+  ## Disqualifiers (auto WATCH or NO TRADE)
+  - Earnings within 3 trading days
+  - Stock extended > 15% above 20-day MA (too late)
+  - Volume expanding during base (institutional selling)
+  - General market QQQ in downtrend (10-day below 20-day)
+  - Base longer than 8 weeks without progress (stalling)
